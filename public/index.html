@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ječná Docs – Live Editor</title>
+<link rel="stylesheet" href="style.css">
+<h1>📝 Ječná Docs</h1>
+
+<div id="status">⏳ připojuji...</div>
+<div id="users"></div>
+<textarea id="editor" disabled></textarea>
+
+<script>
+  let ws;
+  let tries = 0;
+  let users = [];
+
+  const editor = document.getElementById('editor');
+  const status = document.getElementById('status');
+  const usersDiv = document.getElementById('users');
+
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}`);
+
+    ws.onopen = () => {
+      status.textContent = '🟢 online';
+      editor.disabled = false;
+      tries = 0;
+    };
+
+    ws.onclose = () => {
+      status.textContent = '🔴 offline – reconnectuji...';
+      editor.disabled = true;
+      setTimeout(connect, Math.min(1000 * 2 ** tries++, 5000));
+    };
+
+    ws.onerror = () => ws.close();
+
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+
+      if (msg.type === 'init') {
+        editor.value = msg.text;
+        users = msg.users;
+        renderUsers();
+      }
+
+      if (msg.type === 'text') {
+        // přijatá změna textu (od jiného uživatele)
+        editor.value = msg.text;
+      }
+
+      if (msg.type === 'users') {
+        users = msg.users;
+        renderUsers();
+      }
+    };
+  }
+
+  // Odesílání změn textu (po každém vstupu)
+  editor.addEventListener('input', () => {
+    ws.readyState === 1 && ws.send(JSON.stringify({
+      type: 'edit',
+      text: editor.value
+    }));
+  });
+
+  // Odesílání pozice kurzoru
+  editor.addEventListener('keyup', () => sendCursor());
+  editor.addEventListener('click', () => sendCursor());
+  function sendCursor() {
+    ws.readyState === 1 && ws.send(JSON.stringify({
+      type: 'cursor',
+      cursor: editor.selectionStart
+    }));
+  }
+
+  function renderUsers() {
+    usersDiv.innerHTML = users
+      .map(u => `<span style="color:${u.color}">● ${u.name}</span>`)
+      .join(' ');
+  }
+
+  connect();
+</script>
